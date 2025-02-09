@@ -16,6 +16,8 @@ Components:
 - 1 x 3 pin SMD 2.54mm socket
 - 1 x JST PH SMD connector (JST_S2B-PH-SM4-TB)
 
+[Interactive BOM](http://htmlpreview.github.io/?https://github.com/SarahAlroe/NeoInfinity/blob/main/bom/ibom.html)
+
 ## Software
 
 Only dependent on the [megaTinyCore](https://github.com/SpenceKonde/megaTinyCore/blob/master/Installation.md) and its libraries.  
