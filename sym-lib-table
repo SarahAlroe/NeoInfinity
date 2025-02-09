@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "S2B-PH-SM4-TB")(type "KiCad")(uri "${KIPRJMOD}/library/S2B_PH_SM4_TB/S2B-PH-SM4-TB.kicad_sym")(options "")(descr ""))
+  (lib (name "BG300-03-X-X-A_REVC")(type "KiCad")(uri "${KIPRJMOD}/library/BG300_03_A_L_A/BG300-03-X-X-A_REVC.kicad_sym")(options "")(descr ""))
+)
