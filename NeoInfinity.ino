@@ -54,19 +54,14 @@
 #define ADDRESS_DIRECTION 4*4
 #define EEPROM_SET 42
 
-// Temporal dithering error diffusion
-#define RED 0b11100000
-#define RED_OFFSET 5
-#define GREEN 0b00011100
-#define GREEN_OFFSET 2
-#define BLUE 0b00000011
-#define BLUE_OFFSET 0
-
 struct IColor {
   uint16_t r;
   uint16_t g;
   uint16_t b;
 };
+
+// Optimal 8-bit dither pattern. See http://www.cv.ulichney.com/papers/1998-1d-dither.pdf https://gist.github.com/SarahAlroe/706621091b395e601d7d15213bfbb540 
+const uint8_t dither8 [256] = {0, 128, 64, 192, 32, 160, 96, 224, 16, 144, 80, 208, 48, 176, 112, 240, 8, 136, 72, 200, 40, 168, 104, 232, 24, 152, 88, 216, 56, 184, 120, 248, 4, 132, 68, 196, 36, 164, 100, 228, 20, 148, 84, 212, 52, 180, 116, 244, 12, 140, 76, 204, 44, 172, 108, 236, 28, 156, 92, 220, 60, 188, 124, 252, 2, 130, 66, 194, 34, 162, 98, 226, 18, 146, 82, 210, 50, 178, 114, 242, 10, 138, 74, 202, 42, 170, 106, 234, 26, 154, 90, 218, 58, 186, 122, 250, 6, 134, 70, 198, 38, 166, 102, 230, 22, 150, 86, 214, 54, 182, 118, 246, 14, 142, 78, 206, 46, 174, 110, 238, 30, 158, 94, 222, 62, 190, 126, 254, 1, 129, 65, 193, 33, 161, 97, 225, 17, 145, 81, 209, 49, 177, 113, 241, 9, 137, 73, 201, 41, 169, 105, 233, 25, 153, 89, 217, 57, 185, 121, 249, 5, 133, 69, 197, 37, 165, 101, 229, 21, 149, 85, 213, 53, 181, 117, 245, 13, 141, 77, 205, 45, 173, 109, 237, 29, 157, 93, 221, 61, 189, 125, 253, 3, 131, 67, 195, 35, 163, 99, 227, 19, 147, 83, 211, 51, 179, 115, 243, 11, 139, 75, 203, 43, 171, 107, 235, 27, 155, 91, 219, 59, 187, 123, 251, 7, 135, 71, 199, 39, 167, 103, 231, 23, 151, 87, 215, 55, 183, 119, 247, 15, 143, 79, 207, 47, 175, 111, 239, 31, 159, 95, 223, 63, 191, 127, 255};
 
 // How far along a path from 0 to 2^16-1 is each pixel
 const uint16_t PIXEL_POSITIONS [DIRECTION_COUNT][PIXEL_COUNT] = {
@@ -194,7 +189,7 @@ const uint8_t MOVING_SPEEDS[SPEED_COUNT] = {
 
 byte pixels[PIXEL_COUNT * 3];
 tinyNeoPixel strip = tinyNeoPixel(PIXEL_COUNT, PIXEL_PIN, NEO_GRB, pixels);
-uint8_t ditherError[PIXEL_COUNT];
+//uint8_t ditherError[PIXEL_COUNT];
 uint8_t currentSpeed;
 uint8_t currentGradient;
 uint8_t currentDirection;
@@ -202,6 +197,7 @@ uint8_t brightness;
 bool buttonInterrupt = false;
 uint16_t movingOffset;
 uint8_t movingSpeed;
+uint8_t ditherPos;
 
 
 void setup() {
@@ -286,6 +282,7 @@ void updateStrip() {
     }
   }
   strip.show();
+  ditherPos ++;
   movingOffset = movingOffset + movingSpeed;
 }
 
@@ -365,35 +362,36 @@ void setColorProcessed(uint8_t pixel, uint16_t *pRed, uint16_t *pGreen, uint16_t
   green = (green * (uint32_t)brightness) / (1 << (8 + LIGHT_ATTENUATION_LEVEL));
   blue = (blue * (uint32_t)brightness) / (1 << (8 + LIGHT_ATTENUATION_LEVEL));
 
-  // Bitshift to to get 10-11 bit int (with 2-3 bit offset) from 16 bit colors
-  red = red >> (8 - 3); // 2⁸*2³ = 2¹¹
-  green = green >> (8 - 3); // 2⁸*2³ = 2¹¹
-  blue = blue >> (8 - 2); // 2⁸*2² = 2¹⁰
 
 #if DO_ERROR_DIFFUSION
-  // Get last error and add
-  uint8_t redError = (ditherError[pixel] & RED) >> RED_OFFSET;
-  uint8_t greenError = (ditherError[pixel] & GREEN) >> GREEN_OFFSET;
-  uint8_t blueError = (ditherError[pixel] & BLUE) >> BLUE_OFFSET;
 
-  // Add error
-  red += redError;
-  green += greenError;
-  blue += blueError;
+  // Get error
+  uint8_t redError = red & 0xFF;
+  uint8_t greenError = green & 0xFF;
+  uint8_t blueError = blue & 0xFF;
 
+  // Shift to 8-bit
+  red = red >> 8;
+  green = green >> 8;
+  blue = blue >> 8;
+  
+  // Add position to distribute any flickering
+  uint8_t ditherPixelPos = ditherPos + pixel*8; 
 
-  // Save new error
-  redError = red & 0b111;
-  greenError = green & 0b111;
-  blueError = blue & 0b11;
-
-  ditherError[pixel] = (uint8_t)((redError << RED_OFFSET) | (greenError << GREEN_OFFSET) | (blueError << BLUE_OFFSET));
-#endif
+  // Increment if error larger than pattern lookup
+  red += redError >= dither8[ditherPixelPos];
+  green += greenError >= dither8[ditherPixelPos + 1];
+  blue += blueError >= dither8[ditherPixelPos + 2];
+  
+#else
 
   // shift to regular 8 bit values
-  red = red >> 3;
-  green = green >> 3;
-  blue = blue >> 2;
+  red = red >> 8;
+  green = green >> 8;
+  blue = blue >> 8;
+  
+#endif
+
 
 #if LIGHT_ATTENUATION_LEVEL == 0
   // clamp on rare chance of dither overflow, and output
